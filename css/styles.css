@@ -1,0 +1,294 @@
+/* ==========================================================================
+   1. Reset & Base
+   ========================================================================== */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --color-food: #FF6384;
+  --color-transport: #36A2EB;
+  --color-fun: #FFCE56;
+  --color-bg: #f8f9fa;
+  --color-surface: #ffffff;
+  --color-text: #212529;
+  --color-error: #dc3545;
+  --radius: 8px;
+  --spacing: 1rem;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+}
+
+/* ==========================================================================
+   2. Mobile-First Single-Column Layout & Component Styles
+   ========================================================================== */
+
+/* Header */
+header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background-color: var(--color-surface);
+  padding: var(--spacing);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+header h1 {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+#balance-display {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+/* Main layout — single column */
+main {
+  padding: var(--spacing);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing);
+}
+
+/* Sections */
+#form-section,
+#chart-section,
+#list-section {
+  background-color: var(--color-surface);
+  border-radius: var(--radius);
+  padding: var(--spacing);
+}
+
+/* Form field groups */
+.field-group {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: var(--spacing);
+}
+
+.field-group label {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  font-size: 0.9rem;
+}
+
+.field-group input,
+.field-group select {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #ced4da;
+  border-radius: var(--radius);
+  font-size: 1rem;
+  color: var(--color-text);
+  background-color: var(--color-surface);
+}
+
+.field-group input:focus,
+.field-group select:focus {
+  outline: 2px solid #86b7fe;
+  outline-offset: 0;
+  border-color: #86b7fe;
+}
+
+.field-group.has-error input,
+.field-group.has-error select {
+  border-color: var(--color-error);
+}
+
+/* Inline field error messages */
+.field-error {
+  color: var(--color-error);
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
+  min-height: 1rem;
+}
+
+/* Submit button */
+#add-btn {
+  width: 100%;
+  background-color: #0d6efd;
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius);
+  padding: 0.625rem 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+#add-btn:hover {
+  background-color: #0b5ed7;
+}
+
+#add-btn:active {
+  background-color: #0a58ca;
+}
+
+/* Transaction list */
+#list-section h2 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+}
+
+#transaction-list {
+  list-style: none;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+#transaction-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #f0f0f0;
+  gap: 0.5rem;
+}
+
+#transaction-list li:last-child {
+  border-bottom: none;
+}
+
+.transaction-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.transaction-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.transaction-meta {
+  font-size: 0.8rem;
+  color: #6c757d;
+}
+
+.transaction-amount {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.delete-btn {
+  background: none;
+  border: 1px solid #dee2e6;
+  border-radius: var(--radius);
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  color: var(--color-error);
+  transition: background-color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.delete-btn:hover {
+  background-color: #fff5f5;
+}
+
+/* Empty state messages */
+#list-empty-msg,
+#chart-empty-msg,
+#chart-error-msg {
+  text-align: center;
+  color: #6c757d;
+  font-size: 0.9rem;
+  padding: 1rem 0;
+}
+
+/* Toast notification */
+#toast {
+  position: fixed;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #333;
+  color: #fff;
+  padding: 0.75rem 1.25rem;
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  z-index: 200;
+  max-width: 90vw;
+  text-align: center;
+  transition: opacity 0.3s ease;
+}
+
+#toast[hidden] {
+  display: none;
+}
+
+#toast[data-type="error"] { background-color: var(--color-error); }
+#toast[data-type="warning"] { background-color: #fd7e14; }
+#toast[data-type="info"] { background-color: #0d6efd; }
+
+/* ==========================================================================
+   3. Tap-Target Enforcement & Chart Container
+   ========================================================================== */
+
+/* Minimum 44x44px tap targets for all interactive controls */
+button,
+input,
+select {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Chart container */
+#chart-container {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  max-width: 320px;
+  margin-inline: auto;
+}
+
+#chart-section h2 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+  text-align: center;
+}
+
+#spending-chart {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* ==========================================================================
+   4. Two-Column Grid Enhancement (≥768px)
+   ========================================================================== */
+
+@media (min-width: 768px) {
+  main {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "form  chart"
+      "list  list";
+    gap: var(--spacing);
+    max-width: 1280px;
+    margin-inline: auto;
+  }
+
+  #form-section  { grid-area: form; }
+  #chart-section { grid-area: chart; }
+  #list-section  { grid-area: list; }
+}

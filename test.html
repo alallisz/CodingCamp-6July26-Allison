@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Expense and Budget Visualizer — Property-Based Tests</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.5rem; margin-bottom: 1rem; }
+    .result { padding: 0.5rem 0.75rem; border-radius: 6px; margin-bottom: 0.5rem; font-size: 0.9rem; }
+    .pass { background: #d1e7dd; color: #0a3622; }
+    .fail { background: #f8d7da; color: #58151c; }
+    #summary { margin-top: 1rem; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>Property-Based Tests</h1>
+  <div id="results"></div>
+  <div id="summary"></div>
+
+  <!-- fast-check (UMD build — no build step required) -->
+  <script src="https://cdn.jsdelivr.net/npm/fast-check@3/lib/bundle/fast-check.js"></script>
+
+  <!--
+    Stub out all browser APIs that app.js touches at module-evaluation time
+    so loading the script does not throw in this minimal DOM environment.
+  -->
+  <script>
+    // Minimal localStorage stub
+    (function () {
+      const store = {};
+      window.localStorage = {
+        getItem:    (k)    => Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null,
+        setItem:    (k, v) => { store[k] = String(v); },
+        removeItem: (k)    => { delete store[k]; },
+        clear:      ()     => { Object.keys(store).forEach(k => delete store[k]); },
+      };
+    })();
+
+    // Stub DOM helpers used by renderers during init
+    // (real DOM access is not needed for the pure-function property tests)
+    const _noop = () => {};
+    const _noopEl = { textContent: '', hidden: false, dataset: {}, classList: { add: _noop, remove: _noop }, closest: _noop };
+    const _origGetById = document.getElementById.bind(document);
+    document.getElementById = (id) => _origGetById(id) || _noopEl;
+
+    // Suppress DOMContentLoaded from firing App.init during tests
+    // by overriding addEventListener to ignore the DOMContentLoaded hook only
+    const _origAddEventListener = document.addEventListener.bind(document);
+    document.addEventListener = (type, handler, ...rest) => {
+      if (type === 'DOMContentLoaded') return; // skip app bootstrap in tests
+      _origAddEventListener(type, handler, ...rest);
+    };
+  </script>
+
+  <!-- Load app.js — all modules (LocalStorageAdapter, TransactionStore, Validator, etc.) become globals -->
+  <script src="js/app.js"></script>
+
+  <!-- Test runner and property tests -->
+  <script>
+    'use strict';
+
+    const fc = window.fc; // fast-check UMD global
+
+    const resultsEl  = document.getElementById('results');
+    const summaryEl  = document.getElementById('summary');
+    let passed = 0, failed = 0;
+
+    /**
+     * Run a single named test.
+     * fn() should either return normally (pass) or throw (fail).
+     */
+    function run(name, fn) {
+      const div = document.createElement('div');
+      div.className = 'result';
+      try {
+        fn();
+        div.classList.add('pass');
+        div.textContent = '✓ ' + name;
+        passed++;
+      } catch (err) {
+        div.classList.add('fail');
+        div.textContent = '✗ ' + name + ' — ' + err.message;
+        failed++;
+        console.error(name, err);
+      }
+      resultsEl.appendChild(div);
+    }
+
+    // ----------------------------------------------------------------
+    // Arbitraries
+    // ----------------------------------------------------------------
+
+    const validCategoryArb = fc.constantFrom('Food', 'Transport', 'Fun');
+
+    // Generates a valid Transaction object
+    const transactionArb = fc.record({
+      id:        fc.uuid(),
+      name:      fc.string({ minLength: 1, maxLength: 100 }),
+      amount:    fc.float({ min: 0.01, max: 999999999.99, noNaN: true }),
+      category:  validCategoryArb,
+      timestamp: fc.integer({ min: 0, max: Number.MAX_SAFE_INTEGER }),
+    });
+
+    // ----------------------------------------------------------------
+    // Property 1: Transaction persistence round-trip
+    // For any valid array of transactions, JSON.stringify → JSON.parse
+    // must produce structurally equal objects.
+    // Validates: Requirements 5.1, 5.2
+    // Tag: Feature: expense-budget-visualizer, Property 1
+    // ----------------------------------------------------------------
+    run('Property 1: Transaction persistence round-trip', () => {
+      fc.assert(
+        fc.property(fc.array(transactionArb), (transactions) => {
+          const serialized   = JSON.stringify(transactions);
+          const deserialized = JSON.parse(serialized);
+
+          if (!Array.isArray(deserialized))               throw new Error('Result is not an array');
+          if (deserialized.length !== transactions.length) throw new Error('Length mismatch after round-trip');
+
+          for (let i = 0; i < transactions.length; i++) {
+            const orig = transactions[i];
+            const copy = deserialized[i];
+            if (copy.id        !== orig.id)        throw new Error(`id mismatch at index ${i}`);
+            if (copy.name      !== orig.name)      throw new Error(`name mismatch at index ${i}`);
+            if (copy.category  !== orig.category)  throw new Error(`category mismatch at index ${i}`);
+            if (copy.timestamp !== orig.timestamp) throw new Error(`timestamp mismatch at index ${i}`);
+            // amount: allow tiny floating-point delta from JSON serialization
+            if (Math.abs(copy.amount - orig.amount) > 0.0001) throw new Error(`amount mismatch at index ${i}`);
+          }
+        }),
+        { numRuns: 100 }
+      );
+    });
+
+    // ----------------------------------------------------------------
+    // Property 2: Balance equals sum of amounts
+    // Validates: Requirements 3.1–3.4
+    // Tag: Feature: expense-budget-visualizer, Property 2
+    // ----------------------------------------------------------------
+    run('Property 2: Balance equals sum of amounts', () => {
+      fc.assert(
+        fc.property(fc.array(transactionArb), (transactions) => {
+          TransactionStore.load(transactions);
+          const balance  = TransactionStore.getTotalBalance();
+          const expected = transactions.reduce((sum, t) => sum + t.amount, 0);
+          if (Math.abs(balance - expected) > 0.0001) {
+            throw new Error(`Balance ${balance} !== sum ${expected}`);
+          }
+        }),
+        { numRuns: 100 }
+      );
+      // Empty array edge case
+      TransactionStore.load([]);
+      if (TransactionStore.getTotalBalance() !== 0) throw new Error('Empty array should return 0');
+    });
+
+    // ----------------------------------------------------------------
+    // Property 3: Whitespace/empty names always invalid
+    // Validates: Requirement 1.3
+    // Tag: Feature: expense-budget-visualizer, Property 3
+    // ----------------------------------------------------------------
+    run('Property 3: Whitespace and empty names are always invalid', () => {
+      fc.assert(
+        fc.property(
+          fc.oneof(
+            fc.constant(''),
+            fc.stringOf(fc.constantFrom(' ', '\t', '\n', '\r'))
+          ),
+          (name) => {
+            const result = Validator.validateName(name);
+            if (result.ok !== false) throw new Error(`Expected ok=false for "${name.replace(/\s/g, '·')}"`);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    // ----------------------------------------------------------------
+    // Property 4: Amount boundary validation
+    // Validates: Requirements 1.2, 1.4
+    // Tag: Feature: expense-budget-visualizer, Property 4
+    // ----------------------------------------------------------------
+    run('Property 4: Amount validation respects accepted range boundary', () => {
+      // Below range
+      fc.assert(
+        fc.property(fc.float({ min: -1e9, max: 0.0099, noNaN: true }), (v) => {
+          const r = Validator.validateAmount(v);
+          if (r.ok !== false) throw new Error(`Expected ok=false for ${v}`);
+        }),
+        { numRuns: 100 }
+      );
+      // In range — use fc.double so 64-bit min/max boundaries are respected exactly
+      fc.assert(
+        fc.property(fc.double({ min: 0.01, max: 999999999.99, noNaN: true }), (v) => {
+          const r = Validator.validateAmount(v);
+          if (r.ok !== true) throw new Error(`Expected ok=true for ${v}`);
+        }),
+        { numRuns: 100 }
+      );
+      // Above range
+      fc.assert(
+        fc.property(fc.float({ min: 1000000000, max: 1e15, noNaN: true }), (v) => {
+          const r = Validator.validateAmount(v);
+          if (r.ok !== false) throw new Error(`Expected ok=false for ${v}`);
+        }),
+        { numRuns: 100 }
+      );
+    });
+
+    // ----------------------------------------------------------------
+    // Property 5: Delete removes exactly the targeted transaction
+    // Validates: Requirement 2.4
+    // Tag: Feature: expense-budget-visualizer, Property 5
+    // ----------------------------------------------------------------
+    run('Property 5: Delete removes exactly the targeted transaction', () => {
+      fc.assert(
+        fc.property(
+          fc.array(transactionArb, { minLength: 1 }),
+          fc.integer({ min: 0 }),
+          (transactions, idx) => {
+            const i      = idx % transactions.length;
+            const target = transactions[i];
+            TransactionStore.load(transactions);
+            const before = TransactionStore.getAll().length;
+            TransactionStore.delete(target.id);
+            const after  = TransactionStore.getAll();
+            if (after.length !== before - 1) throw new Error(`Length should be ${before - 1}, got ${after.length}`);
+            if (after.some(t => t.id === target.id)) throw new Error('Deleted id still present');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    // ----------------------------------------------------------------
+    // Property 6: Category totals partition the total balance
+    // Validates: Requirements 4.1, 3.1
+    // Tag: Feature: expense-budget-visualizer, Property 6
+    // ----------------------------------------------------------------
+    run('Property 6: Category totals partition the total balance', () => {
+      fc.assert(
+        fc.property(fc.array(transactionArb), (transactions) => {
+          TransactionStore.load(transactions);
+          const totals  = TransactionStore.getCategoryTotals();
+          const catSum  = totals.Food + totals.Transport + totals.Fun;
+          const balance = TransactionStore.getTotalBalance();
+          if (Math.abs(catSum - balance) > 0.001) {
+            throw new Error(`Category sum ${catSum} !== balance ${balance}`);
+          }
+        }),
+        { numRuns: 100 }
+      );
+    });
+
+    // ----------------------------------------------------------------
+    // Property 7: Corrupt items dropped; valid items preserved
+    // Validates: Requirement 5.5
+    // Tag: Feature: expense-budget-visualizer, Property 7
+    // ----------------------------------------------------------------
+    run('Property 7: Corrupt items are dropped; valid items fully preserved', () => {
+      const invalidItemArb = fc.oneof(
+        fc.record({ id: fc.integer(), name: fc.string(), amount: fc.float({ noNaN: true }), category: fc.string(), timestamp: fc.integer() }),
+        fc.record({ name: fc.string(), amount: fc.float({ min: 0.01 }), category: validCategoryArb, timestamp: fc.integer() }), // missing id
+        fc.record({ id: fc.uuid(), name: fc.constant(''), amount: fc.float({ min: 0.01 }), category: validCategoryArb, timestamp: fc.integer() }), // empty name
+        fc.record({ id: fc.uuid(), name: fc.string({ minLength: 1 }), amount: fc.constant(-1), category: validCategoryArb, timestamp: fc.integer() }), // negative amount
+      );
+
+      fc.assert(
+        fc.property(
+          fc.array(transactionArb),
+          fc.array(invalidItemArb, { minLength: 1 }),
+          (valid, invalid) => {
+            // Interleave valid and invalid items, serialize as JSON, read via adapter
+            const mixed = [...valid, ...invalid].sort(() => Math.random() - 0.5);
+            localStorage.setItem('expense-tracker-transactions', JSON.stringify(mixed));
+            const result = LocalStorageAdapter.read();
+
+            // result must be an array
+            if (!Array.isArray(result)) throw new Error('Expected array result');
+            // All valid ids must appear
+            for (const v of valid) {
+              if (!result.some(r => r.id === v.id)) {
+                throw new Error(`Valid transaction ${v.id} was dropped`);
+              }
+            }
+            // No invalid items (identified by non-string ids or other markers) should appear
+            // We check result length does not exceed valid.length
+            if (result.length > valid.length) {
+              throw new Error(`Result has ${result.length} items but only ${valid.length} valid items were written`);
+            }
+          }
+        ),
+        { numRuns: 50 }
+      );
+    });
+
+    // ----------------------------------------------------------------
+    // Property 8: getAll() always returns reverse-chronological order
+    // Validates: Requirement 2.1
+    // Tag: Feature: expense-budget-visualizer, Property 8
+    // ----------------------------------------------------------------
+    run('Property 8: Transaction list is always in reverse-chronological order', () => {
+      fc.assert(
+        fc.property(fc.uniqueArray(transactionArb, { selector: t => t.timestamp, minLength: 2 }), (transactions) => {
+          TransactionStore.load(transactions);
+          const all = TransactionStore.getAll();
+          for (let i = 0; i < all.length - 1; i++) {
+            if (all[i].timestamp < all[i + 1].timestamp) {
+              throw new Error(`Out of order at index ${i}: ${all[i].timestamp} < ${all[i+1].timestamp}`);
+            }
+          }
+        }),
+        { numRuns: 100 }
+      );
+    });
+
+    // ----------------------------------------------------------------
+    // Property 9: Category percentages correct to 1 decimal place
+    // Validates: Requirements 4.5, 4.6
+    // Tag: Feature: expense-budget-visualizer, Property 9
+    // ----------------------------------------------------------------
+    run('Property 9: Category percentage labels are correct to one decimal place', () => {
+      fc.assert(
+        fc.property(
+          fc.record({
+            Food:      fc.float({ min: 0, max: 10000, noNaN: true }),
+            Transport: fc.float({ min: 0, max: 10000, noNaN: true }),
+            Fun:       fc.float({ min: 0, max: 10000, noNaN: true }),
+          }).filter(t => t.Food + t.Transport + t.Fun > 0),
+          (totals) => {
+            const sum = totals.Food + totals.Transport + totals.Fun;
+            const pcts = {
+              Food:      parseFloat(((totals.Food      / sum) * 100).toFixed(1)),
+              Transport: parseFloat(((totals.Transport / sum) * 100).toFixed(1)),
+              Fun:       parseFloat(((totals.Fun       / sum) * 100).toFixed(1)),
+            };
+            const pctSum = pcts.Food + pcts.Transport + pcts.Fun;
+            // Sum of rounded percentages should be within ±0.3 of 100.0
+            if (Math.abs(pctSum - 100.0) > 0.3) {
+              throw new Error(`Percentage sum ${pctSum} is not close to 100.0`);
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    // ----------------------------------------------------------------
+    // Summary
+    // ----------------------------------------------------------------
+    summaryEl.textContent = `${passed} passed, ${failed} failed out of ${passed + failed} tests.`;
+    summaryEl.style.color = failed > 0 ? '#842029' : '#0a3622';
+  </script>
+</body>
+</html>

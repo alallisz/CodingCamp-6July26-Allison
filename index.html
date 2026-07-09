@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Expense and Budget Visualizer</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+  <header>
+    <h1>Expense Tracker</h1>
+    <div id="balance-display">$0.00</div>
+  </header>
+
+  <main>
+
+    <div id="toast" role="alert" aria-live="polite"></div>
+
+    <section id="form-section">
+      <form id="transaction-form" novalidate>
+
+        <div class="field-group">
+          <label for="item-name">Item Name</label>
+          <input id="item-name" type="text" maxlength="100" autocomplete="off" />
+          <span class="field-error" id="item-name-error"></span>
+        </div>
+
+        <div class="field-group">
+          <label for="amount">Amount ($)</label>
+          <input id="amount" type="number" min="0.01" max="999999999.99" step="0.01" />
+          <span class="field-error" id="amount-error"></span>
+        </div>
+
+        <div class="field-group">
+          <label for="category">Category</label>
+          <select id="category">
+            <option value="">-- Select --</option>
+            <option value="Food">Food</option>
+            <option value="Transport">Transport</option>
+            <option value="Fun">Fun</option>
+          </select>
+          <span class="field-error" id="category-error"></span>
+        </div>
+
+        <button type="submit" id="add-btn">Add Transaction</button>
+
+      </form>
+    </section>
+
+    <section id="chart-section">
+      <div id="chart-container">
+        <canvas id="spending-chart"></canvas>
+        <p id="chart-empty-msg" hidden>No spending data yet.</p>
+        <p id="chart-error-msg" hidden>Chart unavailable.</p>
+      </div>
+    </section>
+
+    <section id="list-section">
+      <h2>Transactions</h2>
+      <ul id="transaction-list" aria-live="polite"></ul>
+      <p id="list-empty-msg" hidden>No transactions yet.</p>
+    </section>
+
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>
